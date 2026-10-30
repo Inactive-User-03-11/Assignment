@@ -1,0 +1,155 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: node-app
+    folder: Node App
+    interval: 1m
+    rules:
+      - uid: node-app-5xx
+        title: Node app - high 5xx rate
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical, app: node-app }
+        annotations:
+          summary: 'node-app returned {{ $$values.B.Value }} 5xx responses in the last 5m'
+          description: 'More than 5 HTTP 5xx responses in 5 minutes. Check the "Application logs" panel filtered to level=error.'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: instant
+              expr: 'sum(count_over_time({container="my-app"} | json | msg=~"request (completed|errored)" | res_statusCode >= 500 [5m]))'
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+              datasource: { type: __expr__, uid: __expr__ }
+
+      - uid: node-app-fatal
+        title: Node app - fatal error
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical, app: node-app }
+        annotations:
+          summary: 'node-app logged a fatal error (uncaught exception)'
+          description: 'The process calls process.exit(1) after a fatal log. Check container restart policy and the last logs.'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: instant
+              expr: 'sum(count_over_time({container="my-app"} | json | level="fatal" [5m]))'
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+              datasource: { type: __expr__, uid: __expr__ }
+
+      - uid: node-app-restarts
+        title: Node app - restarted
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning, app: node-app }
+        annotations:
+          summary: 'node-app started {{ $$values.B.Value }} times in 15m'
+          description: 'More than one "server started" log in 15 minutes means the container restarted (crash loop or redeploy).'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: instant
+              expr: 'sum(count_over_time({container="my-app"} | json | msg="server started" [15m]))'
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+              datasource: { type: __expr__, uid: __expr__ }
+
+      - uid: node-app-latency
+        title: Node app - high p95 latency
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning, app: node-app }
+        annotations:
+          summary: 'node-app p95 latency is {{ $$values.B.Value }} ms'
+          description: 'p95 response time above 500 ms for 5 minutes.'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: loki
+            model:
+              refId: A
+              datasource: { type: loki, uid: loki }
+              queryType: instant
+              expr: 'quantile_over_time(0.95, {container="my-app"} | json | msg=~"request (completed|errored)" | unwrap responseTime | __error__="" [5m]) by (container)'
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [500] }
+              datasource: { type: __expr__, uid: __expr__ }

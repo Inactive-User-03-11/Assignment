@@ -2,6 +2,7 @@ services:
   app:
     image: web:latest
     container_name: my-app
+    restart: unless-stopped
     ports:
       - "3001:3000"
     networks:
@@ -41,11 +42,29 @@ services:
     container_name: grafana
     ports:
       - "3000:3000"
+    environment:
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:?set SLACK_WEBHOOK_URL in .env}   # CHANGED: read from .env
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - loki
+    networks:
+      - monitoring
+
+  grafana-mcp:                                   # NEW
+    image: grafana/mcp-grafana:latest
+    container_name: grafana-mcp
+    profiles: ["mcp"]                            # only starts when you ask for it
+    command: ["-t", "streamable-http", "--address", "0.0.0.0:8000"]
+    environment:
+      GRAFANA_URL: http://grafana:3000           # container-to-container, same network
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_MCP_TOKEN:-}
+    ports:
+      - "127.0.0.1:8000:8000"                    # localhost only, on purpose
+    depends_on:
+      - grafana
     networks:
       - monitoring
 
